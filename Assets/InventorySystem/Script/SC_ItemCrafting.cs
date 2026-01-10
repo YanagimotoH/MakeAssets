@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.InputSystem;
+using System.IO;
+using UnityEngine.EventSystems;
 
 public class SC_ItemCrafting : MonoBehaviour
 {
@@ -20,8 +22,9 @@ public class SC_ItemCrafting : MonoBehaviour
     [System.Serializable]
     public class SlotContainer
     {
-        public Sprite itemSprite; //Sprite of the assigned item (Must be the same sprite as in items array), or leave null for no item
-        public int itemCount; //How many items in this slot, everything equal or under 1 will be interpreted as 1 item
+        public Sprite itemSprite; // アサインされたアイテムのスプライト
+        public int itemCount; // アイテムの数
+
         [HideInInspector]
         public int tableID;
         [HideInInspector]
@@ -31,58 +34,75 @@ public class SC_ItemCrafting : MonoBehaviour
     [System.Serializable]
     public class Item
     {
-        public Sprite itemSprite;
-        public bool stackable = false; //Can this item be combined (stacked) together?
-        public string craftRecipe; //Item Keys that are required to craft this item, separated by comma (Tip: Use Craft Button in Play mode and see console for printed recipe)
+        public Sprite itemSprite; // このアイテムはまとめて（スタックして）所持できるか？
+        public bool stackable = false;
+        public string craftRecipe; // このアイテムをクラフトするのに必要なアイテムキー（カンマ区切り、ヒント：プレイモードでクラフトボタンを押すとレシピがコンソールに表示されます）
+
     }
 
     public SlotContainer[] playerSlots;
     SlotContainer[] craftSlots = new SlotContainer[9];
     SlotContainer resultSlot = new SlotContainer();
-    //List of all available items
-    public Item[] items;
-
+    public Item[] items; // 利用可能なすべてのアイテムのリスト
     SlotContainer selectedItemSlot = null;
-
-    int craftTableID = -1; //ID of table where items will be placed one at a time (ex. Craft table)
-    int resultTableID = -1; //ID of table from where we can take items, but cannot place to
+    int resultTableID = -1; // アイテムを取り出せるが、配置できないテーブルのID
 
     ColorBlock defaultButtonColors;
 
-    // Start is called before the first frame update
+    // 持ち上げ中のアイテム情報 ---
+    Sprite heldSprite = null;
+    int heldCount = 0;
+    SlotContainer heldFromSlot = null;
+
+    [System.Serializable]
+    public class InventorySaveData
+    {
+        public List<SlotData> playerSlots = new List<SlotData>();
+    }
+
+    [System.Serializable]
+    public class SlotData
+    {
+        public string itemSpriteName;
+        public int itemCount;
+    }
+
     void Start()
     {
-        //Setup slot element template
+        if (playerSlots == null || playerSlots.Length == 0)
+            playerSlots = new SlotContainer[20]; // 必要な数に合わせて
+        if (craftSlots == null || craftSlots.Length == 0)
+            craftSlots = new SlotContainer[9];
+        // スロット要素テンプレートのセットアップ
         slotTemplate.container.rectTransform.pivot = new Vector2(0, 1);
         slotTemplate.container.rectTransform.anchorMax = slotTemplate.container.rectTransform.anchorMin = new Vector2(0, 1);
         slotTemplate.craftingController = this;
         slotTemplate.gameObject.SetActive(false);
-        //Setup result slot element template
+        // 結果スロット要素テンプレートのセットアップ
         resultSlotTemplate.container.rectTransform.pivot = new Vector2(0, 1);
         resultSlotTemplate.container.rectTransform.anchorMax = resultSlotTemplate.container.rectTransform.anchorMin = new Vector2(0, 1);
         resultSlotTemplate.craftingController = this;
         resultSlotTemplate.gameObject.SetActive(false);
 
-        //Attach click event to craft button
+        // クラフトボタンにクリックイベントを追加
         craftButton.onClick.AddListener(PerformCrafting);
-        //Save craft button default colors
+        // クラフトボタンのデフォルトカラーを保存
         defaultButtonColors = craftButton.colors;
 
-        //InitializeItem Crafting Slots
+        // クラフト用スロットの初期化
         InitializeSlotTable(craftingSlotsContainer, slotTemplate, craftSlots, 5, 0);
         UpdateItems(craftSlots);
-        craftTableID = 0;
 
-        //InitializeItem Player Slots
+        // プレイヤースロットの初期化
         InitializeSlotTable(playerSlotsContainer, slotTemplate, playerSlots, 5, 1);
         UpdateItems(playerSlots);
 
-        //InitializeItemResult Slot
+        // 結果スロットの初期化
         InitializeSlotTable(resultSlotContainer, resultSlotTemplate, new SlotContainer[] { resultSlot }, 0, 2);
         UpdateItems(new SlotContainer[] { resultSlot });
         resultTableID = 2;
 
-        //Reset Slot element template (To be used later for hovering element)
+        // スロットテンプレートの設定を元に戻す
         slotTemplate.container.rectTransform.pivot = new Vector2(0.5f, 0.5f);
         slotTemplate.container.raycastTarget = slotTemplate.item.raycastTarget = slotTemplate.count.raycastTarget = false;
 
@@ -91,6 +111,8 @@ public class SC_ItemCrafting : MonoBehaviour
         {
             audioSource = gameObject.AddComponent<AudioSource>();
         }
+
+        LoadInventoryFromJson();
     }
 
     void InitializeSlotTable(RectTransform container, SC_SlotTemplate slotTemplateTmp, SlotContainer[] slots, int margin, int tableIDTmp)
@@ -119,7 +141,7 @@ public class SC_ItemCrafting : MonoBehaviour
         }
     }
 
-    //Update Table UI
+    // UIの更新
     void UpdateItems(SlotContainer[] slots)
     {
         for (int i = 0; i < slots.Length; i++)
@@ -131,7 +153,7 @@ public class SC_ItemCrafting : MonoBehaviour
                 {
                     slots[i].itemCount = 1;
                 }
-                //Apply total item count
+                // アイテムの数を適用
                 if (slots[i].itemCount > 1)
                 {
                     slots[i].slot.count.enabled = true;
@@ -141,7 +163,7 @@ public class SC_ItemCrafting : MonoBehaviour
                 {
                     slots[i].slot.count.enabled = false;
                 }
-                //Apply item icon
+                // アイテムのスプライトを適用
                 slots[i].slot.item.enabled = true;
                 slots[i].slot.item.sprite = slotItem.itemSprite;
             }
@@ -153,7 +175,7 @@ public class SC_ItemCrafting : MonoBehaviour
         }
     }
 
-    //Find Item from the items list using sprite as reference
+    // スプライトを参照してアイテムリストからアイテムを検索
     Item FindItem(Sprite sprite)
     {
         if (!sprite)
@@ -170,7 +192,7 @@ public class SC_ItemCrafting : MonoBehaviour
         return null;
     }
 
-    //Find Item from the items list using recipe as reference
+    // レシピを参照してアイテムリストからアイテムを検索
     Item FindItem(string recipe)
     {
         if (recipe == "")
@@ -187,24 +209,32 @@ public class SC_ItemCrafting : MonoBehaviour
         return null;
     }
 
-    //Called from SC_SlotTemplate.cs
-    public void ClickEventRecheck()
+    // SC_SlotTemplate.csから呼び出される
+    public void ClickEventRecheck(PointerEventData.InputButton button)
     {
-        if (selectedItemSlot == null)
+        bool isLeftClick = button == PointerEventData.InputButton.Left;
+        bool isRightClick = button == PointerEventData.InputButton.Right;
+
+        if (heldSprite == null)
         {
-            //Get clicked slot
-            selectedItemSlot = GetClickedSlot();
-            if (selectedItemSlot != null)
+            // 持ち上げは左クリックのみ
+            if (isLeftClick)
             {
-                if (selectedItemSlot.itemSprite != null)
+                var clicked = GetClickedSlot();
+                if (clicked != null && clicked.itemSprite != null)
                 {
-                    selectedItemSlot.slot.count.color = selectedItemSlot.slot.item.color = new Color(1, 1, 1, 0.5f);
-                }
-                else
-                {
-                    selectedItemSlot = null;
+                    heldSprite = clicked.itemSprite;
+                    heldCount = clicked.itemCount;
+                    heldFromSlot = clicked;
+                    // 移動元からアイテムを消す
+                    clicked.itemSprite = null;
+                    clicked.itemCount = 0;
+                    UpdateItems(playerSlots);
+                    UpdateItems(craftSlots);
+                    UpdateItems(new SlotContainer[] { resultSlot });
                 }
             }
+            // 右クリックでは何もしない
         }
         else
         {
@@ -213,108 +243,108 @@ public class SC_ItemCrafting : MonoBehaviour
             {
                 bool swapPositions = false;
                 bool releaseClick = true;
+                bool isResultSlot = newClickedSlot == resultSlot;
 
-                if (newClickedSlot != selectedItemSlot)
+                // --- 移動元に戻す場合 ---
+                if (newClickedSlot == heldFromSlot)
                 {
-                    //We clicked on the same table but different slots
-                    if (newClickedSlot.tableID == selectedItemSlot.tableID)
+                    if (isRightClick)
                     {
-                        //Check if new clicked item is the same, then stack, if not, swap (Unless it's a crafting table, then do nothing)
-                        if (newClickedSlot.itemSprite == selectedItemSlot.itemSprite)
+                        if (heldCount > 1)
                         {
-                            Item slotItem = FindItem(selectedItemSlot.itemSprite);
-                            if (slotItem.stackable)
-                            {
-                                //Item is the same and is stackable, remove item from previous position and add its count to a new position
-                                selectedItemSlot.itemSprite = null;
-                                newClickedSlot.itemCount += selectedItemSlot.itemCount;
-                                selectedItemSlot.itemCount = 0;
-                            }
-                            else
-                            {
-                                swapPositions = true;
-                            }
+                            heldFromSlot.itemSprite = heldSprite;
+                            heldFromSlot.itemCount += 1;
+                            heldCount -= 1;
+                            UpdateItems(new SlotContainer[] { heldFromSlot });
+                            releaseClick = false;
                         }
-                        else
+                        else if (heldCount == 1)
                         {
-                            swapPositions = true;
+                            heldFromSlot.itemSprite = heldSprite;
+                            heldFromSlot.itemCount += 1;
+                            heldSprite = null;
+                            heldCount = 0;
+                            heldFromSlot = null;
                         }
                     }
-                    else
+                    else if (isLeftClick)
                     {
-                        //Moving to different table
-                        if (resultTableID != newClickedSlot.tableID)
+                        heldFromSlot.itemSprite = heldSprite;
+                        heldFromSlot.itemCount += heldCount;
+                        heldSprite = null;
+                        heldCount = 0;
+                        heldFromSlot = null;
+                    }
+                }
+                // --- 他スロットに置く場合 ---
+                else if ((newClickedSlot.itemSprite == null || newClickedSlot.itemSprite == heldSprite)
+                    && resultTableID != newClickedSlot.tableID)
+                {
+                    Item slotItem = FindItem(heldSprite);
+                    bool canStack = slotItem != null && slotItem.stackable;
+
+                    // ★ここから追加: スタック不可アイテムの重ね置き阻止
+                    if (!canStack && newClickedSlot.itemSprite == heldSprite)
+                    {
+                        // 何もせずreturn（消失を防ぐ）
+                        return;
+                    }
+                    // ★ここまで追加
+
+                    if (isRightClick)
+                    {
+                        if (heldCount > 1)
                         {
-                            if (craftTableID != newClickedSlot.tableID)
-                            {
-                                if (newClickedSlot.itemSprite == selectedItemSlot.itemSprite)
-                                {
-                                    Item slotItem = FindItem(selectedItemSlot.itemSprite);
-                                    if (slotItem.stackable)
-                                    {
-                                        //Item is the same and is stackable, remove item from previous position and add its count to a new position
-                                        selectedItemSlot.itemSprite = null;
-                                        newClickedSlot.itemCount += selectedItemSlot.itemCount;
-                                        selectedItemSlot.itemCount = 0;
-                                    }
-                                    else
-                                    {
-                                        swapPositions = true;
-                                    }
-                                }
-                                else
-                                {
-                                    swapPositions = true;
-                                }
-                            }
-                            else
-                            {
-                                if (newClickedSlot.itemSprite == null || newClickedSlot.itemSprite == selectedItemSlot.itemSprite)
-                                {
-                                    //Add 1 item from selectedItemSlot
-                                    newClickedSlot.itemSprite = selectedItemSlot.itemSprite;
-                                    newClickedSlot.itemCount++;
-                                    selectedItemSlot.itemCount--;
-                                    if (selectedItemSlot.itemCount <= 0)
-                                    {
-                                        //We placed the last item
-                                        selectedItemSlot.itemSprite = null;
-                                    }
-                                    else
-                                    {
-                                        releaseClick = false;
-                                    }
-                                }
-                                else
-                                {
-                                    swapPositions = true;
-                                }
-                            }
+                            newClickedSlot.itemSprite = heldSprite;
+                            newClickedSlot.itemCount += 1;
+                            heldCount -= 1;
+                            UpdateItems(new SlotContainer[] { newClickedSlot });
+                            releaseClick = false;
+                        }
+                        else if (heldCount == 1)
+                        {
+                            newClickedSlot.itemSprite = heldSprite;
+                            newClickedSlot.itemCount += 1;
+                            heldSprite = null;
+                            heldCount = 0;
+                            heldFromSlot = null;
                         }
                     }
+                    else if (isLeftClick)
+                    {
+                        newClickedSlot.itemSprite = heldSprite;
+                        newClickedSlot.itemCount += heldCount;
+                        heldSprite = null;
+                        heldCount = 0;
+                        heldFromSlot = null;
+                    }
+                }
+                // 入れ替えは resultSlot 以外のみ許可
+                else if (!isResultSlot)
+                {
+                    swapPositions = true;
                 }
 
                 if (swapPositions)
                 {
-                    //Swap items
-                    Sprite previousItemSprite = selectedItemSlot.itemSprite;
-                    int previousItemConunt = selectedItemSlot.itemCount;
+                    // 入れ替え時はheldSprite/heldCountを新しいスロットの内容に
+                    Sprite tempSprite = newClickedSlot.itemSprite;
+                    int tempCount = newClickedSlot.itemCount;
 
-                    selectedItemSlot.itemSprite = newClickedSlot.itemSprite;
-                    selectedItemSlot.itemCount = newClickedSlot.itemCount;
+                    newClickedSlot.itemSprite = heldSprite;
+                    newClickedSlot.itemCount = heldCount;
 
-                    newClickedSlot.itemSprite = previousItemSprite;
-                    newClickedSlot.itemCount = previousItemConunt;
+                    heldSprite = tempSprite;
+                    heldCount = tempCount;
+                    heldFromSlot = newClickedSlot;
                 }
 
-                if (releaseClick)
+                if (releaseClick && heldSprite != null && heldCount == 0)
                 {
-                    //Release click
-                    selectedItemSlot.slot.count.color = selectedItemSlot.slot.item.color = Color.white;
-                    selectedItemSlot = null;
+                    heldSprite = null;
+                    heldFromSlot = null;
                 }
 
-                //Update UI
                 UpdateItems(playerSlots);
                 UpdateItems(craftSlots);
                 UpdateItems(new SlotContainer[] { resultSlot });
@@ -353,35 +383,62 @@ public class SC_ItemCrafting : MonoBehaviour
 
     void PerformCrafting()
     {
-        string[] combinedItemRecipe = new string[craftSlots.Length];
+        if (resultSlot.itemSprite != null && resultSlot.itemCount > 0)
+        {
+            if (craftFailClip != null && audioSource != null)
+            {
+                audioSource.PlayOneShot(craftFailClip);
+            }
+            ColorBlock colors = craftButton.colors;
+            colors.selectedColor = colors.pressedColor = new Color(0.8f, 0.55f, 0.55f, 1);
+            craftButton.colors = colors;
+            return;
+        }
 
         craftButton.colors = defaultButtonColors;
 
-        for (int i = 0; i < craftSlots.Length; i++)
+        // レシピごとに成立するか判定
+        Item craftedItem = null;
+        foreach (var item in items)
         {
-            Item slotItem = FindItem(craftSlots[i].itemSprite);
-            if (slotItem != null)
+            if (!string.IsNullOrEmpty(item.craftRecipe) && CanCraft(item))
             {
-                combinedItemRecipe[i] = slotItem.itemSprite.name + (craftSlots[i].itemCount > 1 ? "(" + craftSlots[i].itemCount + ")" : "");
-            }
-            else
-            {
-                combinedItemRecipe[i] = "";
+                craftedItem = item;
+                break;
             }
         }
 
-        string combinedRecipe = string.Join(",", combinedItemRecipe);
-        print(combinedRecipe);
-
-        //Search if recipe match any of the item recipe
-        Item craftedItem = FindItem(combinedRecipe);
         if (craftedItem != null)
         {
-            //Clear Craft slots
+            // 必要数だけ減算
+            string[] recipeParts = craftedItem.craftRecipe.Split(',');
             for (int i = 0; i < craftSlots.Length; i++)
             {
-                craftSlots[i].itemSprite = null;
-                craftSlots[i].itemCount = 0;
+                int needCount = 0;
+                if (!string.IsNullOrEmpty(recipeParts[i]))
+                {
+                    string name = recipeParts[i];
+                    int leftParen = name.IndexOf('(');
+                    int rightParen = name.IndexOf(')');
+                    if (leftParen > 0 && rightParen > leftParen)
+                    {
+                        string countStr = name.Substring(leftParen + 1, rightParen - leftParen - 1);
+                        int.TryParse(countStr, out needCount);
+                    }
+                    else
+                    {
+                        needCount = 1;
+                    }
+                }
+                if (craftSlots[i].itemSprite != null && craftSlots[i].itemCount > 0)
+                {
+                    craftSlots[i].itemCount -= needCount;
+                    if (craftSlots[i].itemCount <= 0)
+                    {
+                        craftSlots[i].itemSprite = null;
+                        craftSlots[i].itemCount = 0;
+                    }
+                }
             }
 
             resultSlot.itemSprite = craftedItem.itemSprite;
@@ -390,7 +447,6 @@ public class SC_ItemCrafting : MonoBehaviour
             UpdateItems(craftSlots);
             UpdateItems(new SlotContainer[] { resultSlot });
 
-            // 成功時の効果音
             if (craftSuccessClip != null && audioSource != null)
             {
                 audioSource.PlayOneShot(craftSuccessClip);
@@ -402,7 +458,6 @@ public class SC_ItemCrafting : MonoBehaviour
             colors.selectedColor = colors.pressedColor = new Color(0.8f, 0.55f, 0.55f, 1);
             craftButton.colors = colors;
 
-            // 失敗時の効果音
             if (craftFailClip != null && audioSource != null)
             {
                 audioSource.PlayOneShot(craftFailClip);
@@ -410,30 +465,106 @@ public class SC_ItemCrafting : MonoBehaviour
         }
     }
 
-    // Update is called once per frame
+    // インベントリをJSONで保存
+    public void SaveInventoryToJson()
+    {
+        InventorySaveData saveData = new InventorySaveData();
+        foreach (var slot in playerSlots)
+        {
+            SlotData data = new SlotData
+            {
+                itemSpriteName = slot.itemSprite != null ? slot.itemSprite.name : null,
+                itemCount = slot.itemCount
+            };
+            saveData.playerSlots.Add(data);
+        }
+
+        string json = JsonUtility.ToJson(saveData, true);
+        string path = Path.Combine(Application.dataPath, "inventory.json");
+        File.WriteAllText(path, json);
+        Debug.Log($"インベントリを保存しました: {path}");
+    }
+
+    // アプリケーション終了時に自動保存
+    private void OnApplicationQuit()
+    {
+        MoveCraftAndResultToPlayerSlots();
+        SaveInventoryToJson();
+    }
+
+    // インベントリをJSONから復元
+    public void LoadInventoryFromJson()
+    {
+        string path = Path.Combine(Application.dataPath, "inventory.json");
+        if (!File.Exists(path))
+        {
+            Debug.Log("インベントリ保存ファイルが見つかりません: " + path);
+            return;
+        }
+
+        string json = File.ReadAllText(path);
+        InventorySaveData saveData = JsonUtility.FromJson<InventorySaveData>(json);
+
+        for (int i = 0; i < playerSlots.Length; i++)
+        {
+            if (i < saveData.playerSlots.Count)
+            {
+                var data = saveData.playerSlots[i];
+                playerSlots[i].itemSprite = null;
+                // Sprite名からSpriteを復元
+                if (!string.IsNullOrEmpty(data.itemSpriteName))
+                {
+                    foreach (var item in items)
+                    {
+                        if (item.itemSprite != null && item.itemSprite.name == data.itemSpriteName)
+                        {
+                            playerSlots[i].itemSprite = item.itemSprite;
+                            break;
+                        }
+                    }
+                }
+                playerSlots[i].itemCount = data.itemCount;
+            }
+            else
+            {
+                playerSlots[i].itemSprite = null;
+                playerSlots[i].itemCount = 0;
+            }
+        }
+        UpdateItems(playerSlots);
+        Debug.Log("インベントリを復元しました: " + path);
+    }
+
+    // Updateは毎フレーム呼び出される
     void Update()
     {
-        //Slot UI follow mouse position
-        if (selectedItemSlot != null)
+        // 持ち上げ中アイテムをカーソルに追従表示
+        if (heldSprite != null && heldCount > 0)
         {
             if (!slotTemplate.gameObject.activeSelf)
             {
                 slotTemplate.gameObject.SetActive(true);
                 slotTemplate.container.enabled = false;
-
-                //Copy selected item values to slot template
-                slotTemplate.count.color = selectedItemSlot.slot.count.color;
-                slotTemplate.item.sprite = selectedItemSlot.slot.item.sprite;
-                slotTemplate.item.color = selectedItemSlot.slot.item.color;
             }
 
-            //Make template slot follow mouse position (新Input System対応)
+            slotTemplate.item.enabled = true;
+            slotTemplate.item.sprite = heldSprite;
+            slotTemplate.item.color = Color.white;
+
+            if (heldCount > 1)
+            {
+                slotTemplate.count.enabled = true;
+                slotTemplate.count.text = heldCount.ToString();
+            }
+            else
+            {
+                slotTemplate.count.enabled = false;
+            }
+
+            // マウス位置に追従
             slotTemplate.container.rectTransform.position = Mouse.current != null
                 ? Mouse.current.position.ReadValue()
                 : Vector3.zero;
-            //Update item count
-            slotTemplate.count.text = selectedItemSlot.slot.count.text;
-            slotTemplate.count.enabled = selectedItemSlot.slot.count.enabled;
         }
         else
         {
@@ -442,5 +573,102 @@ public class SC_ItemCrafting : MonoBehaviour
                 slotTemplate.gameObject.SetActive(false);
             }
         }
+    }
+
+    // クラフト前・後欄のアイテムをplayerSlotsに移動
+    void MoveCraftAndResultToPlayerSlots()
+    {
+        // クラフトスロット
+        for (int i = 0; i < craftSlots.Length; i++)
+        {
+            if (craftSlots[i].itemSprite != null && craftSlots[i].itemCount > 0)
+            {
+                AddItemToPlayerSlots(craftSlots[i].itemSprite, craftSlots[i].itemCount);
+                craftSlots[i].itemSprite = null;
+                craftSlots[i].itemCount = 0;
+            }
+        }
+        // 結果スロット
+        if (resultSlot.itemSprite != null && resultSlot.itemCount > 0)
+        {
+            AddItemToPlayerSlots(resultSlot.itemSprite, resultSlot.itemCount);
+            resultSlot.itemSprite = null;
+            resultSlot.itemCount = 0;
+        }
+        UpdateItems(playerSlots);
+        UpdateItems(craftSlots);
+        UpdateItems(new SlotContainer[] { resultSlot });
+    }
+
+    // アイテムをplayerSlotsにスタック加算または空き欄に配置
+    void AddItemToPlayerSlots(Sprite itemSprite, int itemCount)
+    {
+        Item item = FindItem(itemSprite);
+        if (item == null) return;
+
+        if (item.stackable)
+        {
+            // 既存スロットに加算
+            for (int i = 0; i < playerSlots.Length && itemCount > 0; i++)
+            {
+                if (playerSlots[i].itemSprite == itemSprite)
+                {
+                    playerSlots[i].itemCount += itemCount;
+                    return;
+                }
+            }
+            // 空きスロットにまとめて配置
+            for (int i = 0; i < playerSlots.Length && itemCount > 0; i++)
+            {
+                if (playerSlots[i].itemSprite == null)
+                {
+                    playerSlots[i].itemSprite = itemSprite;
+                    playerSlots[i].itemCount = itemCount;
+                    return;
+                }
+            }
+        }
+        else
+        {
+            // スタック不可: 1スロットに1個ずつ
+            for (int i = 0; i < playerSlots.Length && itemCount > 0; i++)
+            {
+                if (playerSlots[i].itemSprite == null)
+                {
+                    playerSlots[i].itemSprite = itemSprite;
+                    playerSlots[i].itemCount = 1;
+                    itemCount--;
+                }
+            }
+        }
+
+    }
+
+    // レシピがクラフト欄の内容で成立するか判定
+    bool CanCraft(Item recipeItem)
+    {
+        string[] recipeParts = recipeItem.craftRecipe.Split(',');
+        for (int i = 0; i < craftSlots.Length; i++)
+        {
+            if (string.IsNullOrEmpty(recipeParts[i]))
+            {
+                if (craftSlots[i].itemSprite != null)
+                    return false;
+                continue;
+            }
+            string name = recipeParts[i];
+            int needCount = 1;
+            int leftParen = name.IndexOf('(');
+            int rightParen = name.IndexOf(')');
+            if (leftParen > 0 && rightParen > leftParen)
+            {
+                string countStr = name.Substring(leftParen + 1, rightParen - leftParen - 1);
+                int.TryParse(countStr, out needCount);
+                name = name.Substring(0, leftParen);
+            }
+            if (craftSlots[i].itemSprite == null || craftSlots[i].itemSprite.name != name || craftSlots[i].itemCount < needCount)
+                return false;
+        }
+        return true;
     }
 }

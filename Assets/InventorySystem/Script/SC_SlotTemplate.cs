@@ -19,6 +19,6 @@ public class SC_SlotTemplate : MonoBehaviour, IPointerClickHandler
     public void OnPointerClick(PointerEventData eventData)
     {
         hasClicked = true;
-        craftingController.ClickEventRecheck();
+        craftingController.ClickEventRecheck(eventData.button);
     }
 }
