@@ -19,7 +19,7 @@ public class SC_ItemCrafting : MonoBehaviour
     public AudioClip craftFailClip;
     private AudioSource audioSource;
 
-    [System.Serializable]
+    [System.Serializable] // スロット内のアイテム情報
     public class SlotContainer
     {
         public Sprite itemSprite; // アサインされたアイテムのスプライト
@@ -31,7 +31,7 @@ public class SC_ItemCrafting : MonoBehaviour
         public SC_SlotTemplate slot;
     }
 
-    [System.Serializable]
+    [System.Serializable]  // アイテムデータ
     public class Item
     {
         public Sprite itemSprite; // このアイテムはまとめて（スタックして）所持できるか？
@@ -44,7 +44,6 @@ public class SC_ItemCrafting : MonoBehaviour
     SlotContainer[] craftSlots = new SlotContainer[9];
     SlotContainer resultSlot = new SlotContainer();
     public Item[] items; // 利用可能なすべてのアイテムのリスト
-    SlotContainer selectedItemSlot = null;
     int resultTableID = -1; // アイテムを取り出せるが、配置できないテーブルのID
 
     ColorBlock defaultButtonColors;
@@ -54,7 +53,7 @@ public class SC_ItemCrafting : MonoBehaviour
     int heldCount = 0;
     SlotContainer heldFromSlot = null;
 
-    [System.Serializable]
+    [System.Serializable] // インベントリ保存用データ構造
     public class InventorySaveData
     {
         public List<SlotData> playerSlots = new List<SlotData>();
