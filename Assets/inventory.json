@@ -1,12 +1,12 @@
 {
     "playerSlots": [
         {
-            "itemSpriteName": "rod",
-            "itemCount": 9
-        },
-        {
             "itemSpriteName": "gold",
-            "itemCount": 3
+            "itemCount": 1
+        },
+        {
+            "itemSpriteName": "rod",
+            "itemCount": 8
         },
         {
             "itemSpriteName": "gold_sword",
@@ -17,8 +17,8 @@
             "itemCount": 1
         },
         {
-            "itemSpriteName": "",
-            "itemCount": 0
+            "itemSpriteName": "gold_sword",
+            "itemCount": 1
         },
         {
             "itemSpriteName": "",
